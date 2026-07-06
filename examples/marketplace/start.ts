@@ -63,33 +63,47 @@ async function main() {
   if (env.LLM_MODEL) llmOpts.LLM_MODEL = str(env.LLM_MODEL)
   if (trace) llmOpts.TRACE = str(trace)
 
-  // The market sells one verified product: a TxODDS World Cup read (the `txline` service). Generic
-  // services (coingecko/jupiter/news) are no longer routed — the seller image only delivers txline —
-  // so the market needs a free devnet TxLINE token to have anything to sell.
+  // MARKET picks what this session sells:
+  //   MARKET=txline (default) — verified TxODDS World Cup reads; needs a free devnet TXLINE_API_KEY.
+  //   MARKET=oracle           — Solana-native on-chain intelligence (counterparty trust scores) read
+  //                             straight off devnet; NO external API key needed, so `npm start` runs
+  //                             end-to-end on a fresh clone. This is the STUK headline market.
+  const market = (env.MARKET ?? 'txline').toLowerCase()
+  const isOracle = market === 'oracle'
+
   const txlineKey = env.TXLINE_API_KEY
-  if (!txlineKey) {
+  if (!isOracle && !txlineKey) {
     throw new Error(
-      'TXLINE_API_KEY missing — this market sells verified TxODDS World Cup data. Mint a free devnet ' +
-      'token with `npm run mint` in examples/txodds, then re-run `npm start`.',
+      'TXLINE_API_KEY missing — the txline market sells verified TxODDS World Cup data. Mint a free ' +
+      'devnet token with `npm run mint` in examples/txodds, then re-run `npm start` — or run the ' +
+      'keyless on-chain-oracle market instead with MARKET=oracle npm start.',
     )
   }
 
-  // Every seller is a txline seller sharing the receive wallet + token; they compete on persona/floor
-  // (set per coral-agent.toml), not code. The buyer awards best value and settles the winner via escrow.
+  // Every seller shares the receive wallet and competes on persona/floor (set per coral-agent.toml),
+  // not code. The buyer awards best value and settles the winner via escrow. The oracle sellers need
+  // no service key — they read chain state through the devnet RPC and always deliver a verifiable read.
   const seller = (name: string) =>
-    agent(name, {
-      SELLER_WALLET: str(wallet), SOLANA_RPC_URL: str(rpc), AGENT_NAME: str(name),
-      SERVICES: str('txline'), TXLINE_API_KEY: str(txlineKey),
-      ...(env.TXLINE_BASE_URL ? { TXLINE_BASE_URL: str(env.TXLINE_BASE_URL) } : {}),
-      ...llmOpts,
-    })
+    agent(name, isOracle
+      ? {
+          SELLER_WALLET: str(wallet), SOLANA_RPC_URL: str(rpc), AGENT_NAME: str(name),
+          SERVICES: str('oracle'), ...llmOpts,
+        }
+      : {
+          SELLER_WALLET: str(wallet), SOLANA_RPC_URL: str(rpc), AGENT_NAME: str(name),
+          SERVICES: str('txline'), TXLINE_API_KEY: str(txlineKey),
+          ...(env.TXLINE_BASE_URL ? { TXLINE_BASE_URL: str(env.TXLINE_BASE_URL) } : {}),
+          ...llmOpts,
+        })
 
-  const sellers = ['seller-worldcup', 'seller-cheap', 'seller-premium']
+  const sellers = isOracle
+    ? ['seller-oracle', 'seller-scout']
+    : ['seller-worldcup', 'seller-cheap', 'seller-premium']
 
   // Optional broker swarm (ENABLE_BROKER=1, see coral-agents/broker/README.md): the buyer buys from a
   // broker, which resells from the real sellers. Needs a funded broker wallet + seller receive wallets —
   // `node scripts/provision-swarm.js`.
-  const brokerWanted = env.ENABLE_BROKER === '1'
+  const brokerWanted = env.ENABLE_BROKER === '1' && !isOracle // broker resells the txline product
   const brokerReady = brokerWanted && !!env.BROKER_KEYPAIR_B58 && !!env.BROKER_WALLET
   if (brokerWanted && !brokerReady) {
     console.warn('[marketplace] ENABLE_BROKER=1 but BROKER_KEYPAIR_B58/BROKER_WALLET missing — run `node scripts/provision-swarm.js`. Skipping broker.')
@@ -106,11 +120,12 @@ async function main() {
   const buyerSellers = brokerReady ? ['broker'] : sellers
   const buyerExpectedWallet = brokerReady ? env.BROKER_WALLET : wallet
 
-  // The buyer shops for the txline read. `fixtures` always returns data; override with BUYER_ARG (e.g.
-  // `edge <fixtureId>` for the headline read) or BUYER_ARGS (a csv rotated one per round) once you have
-  // a live fixture id.
-  const buyerService = env.BUYER_SERVICE ?? 'txline'
-  const buyerArg = env.BUYER_ARG ?? 'fixtures'
+  // What the buyer shops for. In the oracle market the WANT arg is a single-token wallet address (the
+  // counterparty to score); it defaults to the receive wallet — a real funded devnet account, so the
+  // live read is genuinely interesting. Override with ORACLE_TARGET, or rotate several via BUYER_ARGS.
+  // In the txline market `fixtures` always returns data; override BUYER_ARG with `edge <fixtureId>`.
+  const buyerService = env.BUYER_SERVICE ?? (isOracle ? 'oracle' : 'txline')
+  const buyerArg = env.BUYER_ARG ?? (isOracle ? (env.ORACLE_TARGET ?? wallet) : 'fixtures')
   const buyerArgs = env.BUYER_ARGS ?? ''
 
   const buyerOpts: Record<string, unknown> = {
@@ -138,9 +153,7 @@ async function main() {
       agentGraphRequest: {
         agents: [
           agent('buyer-agent', buyerOpts),
-          seller('seller-worldcup'),
-          seller('seller-cheap'),
-          seller('seller-premium'),
+          ...sellers.map(seller),
           ...brokerAgents,
         ],
       },
@@ -152,12 +165,14 @@ async function main() {
   const { sessionId } = await sres.json() as { sessionId: string }
 
   const lineup = brokerReady ? `broker (reselling ${sellers.join(', ')})` : sellers.join(', ')
-  console.log(`\n✅ Market session ${sessionId} — buyer + ${lineup}.`)
+  const product = isOracle ? `on-chain intelligence (oracle ${buyerArg})` : 'verified TxODDS reads'
+  console.log(`\n✅ ${isOracle ? 'Oracle' : 'Market'} session ${sessionId} — buyer + ${lineup}.`)
+  console.log(`   selling: ${product}`)
   console.log(`   receive wallet: ${wallet}`)
   console.log('   The buyer broadcasts a WANT; sellers bid; the winner settles via escrow.\n')
   console.log('   Watch the market:')
   console.log('     docker logs -f buyer-agent      # WANT → AWARD (with a reason) → DEPOSITED → RELEASED')
-  console.log('     docker logs -f seller-cheap     # BID → ESCROW_REQUIRED → DELIVERED')
+  console.log(`     docker logs -f ${sellers[sellers.length - 1]}     # BID → ESCROW_REQUIRED → DELIVERED`)
   console.log('   Set TRACE=1 in .env to see the coral_* calls + Explorer links for deposit/release.\n')
 }
 

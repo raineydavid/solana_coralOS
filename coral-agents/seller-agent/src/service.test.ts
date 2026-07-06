@@ -1,6 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { deliverService } from './service.js'
 
+// Swap the devnet-guarded connection for an in-memory fake so oracle tests never touch the network.
+const onchain = vi.hoisted(() => ({ conn: null as unknown }))
+vi.mock('@pay/agent-runtime', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@pay/agent-runtime')>()
+  return { ...actual, solanaConnection: () => onchain.conn }
+})
+
 describe('deliverService routing', () => {
   const realFetch = global.fetch
 
@@ -22,8 +29,55 @@ describe('deliverService routing', () => {
     expect(out).toEqual({
       error: 'unsupported service',
       service: 'coingecko',
-      supported: ['txline', 'freelance', 'risk-policy', 'fan-card'],
+      supported: ['txline', 'oracle', 'freelance', 'risk-policy', 'fan-card'],
     })
+  })
+
+  it('oracle wallet delivers a live devnet report from on-chain facts', async () => {
+    onchain.conn = {
+      getAccountInfo: async () => ({ lamports: 2_500_000_000, executable: false }),
+      getParsedTokenAccountsByOwner: async () => ({
+        value: [{ account: { data: { parsed: { info: { mint: 'MintAAA', tokenAmount: { uiAmount: 12, decimals: 6 } } } } } }],
+      }),
+      getSignaturesForAddress: async () => [{ signature: 'sigLatest' }, { signature: 'sigOlder' }],
+    }
+    const out = JSON.parse(await deliverService('oracle wallet So11111111111111111111111111111111111111112'))
+    expect(out).toMatchObject({
+      service: 'oracle-wallet',
+      cluster: 'devnet',
+      exists: true,
+      solBalance: 2.5,
+      tokenAccounts: 1,
+      recentTxCount: 2,
+      lastSignature: 'sigLatest',
+    })
+    expect(out.holdings[0]).toMatchObject({ mint: 'MintAAA', uiAmount: 12 })
+  })
+
+  it('oracle risk scores an established, funded counterparty as safe-to-escrow', async () => {
+    onchain.conn = {
+      getAccountInfo: async () => ({ lamports: 3_000_000_000, executable: false }),
+      getParsedTokenAccountsByOwner: async () => ({
+        value: [{ account: { data: { parsed: { info: { mint: 'MintAAA', tokenAmount: { uiAmount: 1, decimals: 6 } } } } } }],
+      }),
+      getSignaturesForAddress: async () => Array.from({ length: 40 }, (_, i) => ({ signature: `s${i}` })),
+    }
+    const out = JSON.parse(await deliverService('oracle risk So11111111111111111111111111111111111111112'))
+    expect(out).toMatchObject({ service: 'oracle-risk', band: 'established', recommendation: 'safe-to-escrow' })
+    expect(out.trustScore).toBeGreaterThanOrEqual(60)
+    expect(out.signals.funded).toBe(true)
+    // No LLM key configured -> deterministic rationale still ships (the service never no-shows).
+    expect(typeof out.rationale).toBe('string')
+  })
+
+  it('oracle flags an empty throwaway wallet as high no-show risk', async () => {
+    onchain.conn = {
+      getAccountInfo: async () => null, // account does not exist on-chain
+      getParsedTokenAccountsByOwner: async () => ({ value: [] }),
+      getSignaturesForAddress: async () => [],
+    }
+    const out = JSON.parse(await deliverService('oracle So11111111111111111111111111111111111111112')) // bare address -> risk
+    expect(out).toMatchObject({ service: 'oracle-risk', band: 'empty', recommendation: 'high-no-show-risk', trustScore: 0 })
   })
 
   it('delivers a deterministic fixture risk policy', async () => {

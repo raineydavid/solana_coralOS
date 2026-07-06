@@ -2,6 +2,8 @@
  * Seller services.
  *
  * `txline` - verified TxLINE fair-line reads for a fixture.
+ * `oracle` - Solana-native on-chain intelligence: a live wallet report or a counterparty trust score
+ * read straight off devnet (no API key, no LLM required). The headline STUK fork — see ./oracle.ts.
  * `risk-policy` - deterministic policy guardrails for a fixture/order.
  * `fan-card` - deterministic fan-facing explanation card for a fixture/order.
  * `freelance` - the generic LLM worker (the freelancer market's baseline seller): the brief goes to
@@ -9,13 +11,15 @@
  * the verifier fails and the buyer refuses to pay for - no-capability sellers don't get released.
  */
 import { complete, parseJsonReply } from '@pay/agent-runtime'
+import { oracleWallet, oracleRisk } from './oracle.js'
 
 const TXLINE_BASE = process.env.TXLINE_BASE_URL || 'https://txline-dev.txodds.com'
-const SUPPORTED_SERVICES = ['txline', 'freelance', 'risk-policy', 'fan-card']
+const SUPPORTED_SERVICES = ['txline', 'oracle', 'freelance', 'risk-policy', 'fan-card']
 
 export async function deliverService(request: string): Promise<string> {
   const [first, ...rest] = request.trim().split(/\s+/).filter(Boolean)
   const service = (first ?? 'txline').toLowerCase()
+  if (service === 'oracle') return oracleService(rest.join(' '))
   if (service === 'freelance') return freelanceService(rest.join(' '))
   if (service === 'risk-policy') return riskPolicyService(rest.join(' '))
   if (service === 'fan-card') return fanCardService(rest.join(' '))
@@ -27,6 +31,21 @@ export async function deliverService(request: string): Promise<string> {
 
 function fixtureIdFrom(request: string): string | undefined {
   return request.trim().split(/\s+/).find((token) => /^\d+$/.test(token))
+}
+
+/**
+ * `oracle` — Solana-native on-chain intelligence (the STUK headline fork). Grammar:
+ *   oracle wallet <address>   -> live devnet wallet report
+ *   oracle risk   <address>   -> counterparty trust score + settlement recommendation
+ * A bare address is treated as `risk <address>` (the on-thesis product: the pay-or-not decision).
+ */
+async function oracleService(request: string): Promise<string> {
+  const tokens = request.trim().split(/\s+/).filter(Boolean)
+  let verb = (tokens[0] ?? 'risk').toLowerCase()
+  let address = tokens[1]
+  if (verb && verb !== 'wallet' && verb !== 'risk') { address = verb; verb = 'risk' } // bare address -> risk
+  if (!address) return JSON.stringify({ service: 'oracle', error: 'usage: oracle wallet <address> | oracle risk <address>' })
+  return verb === 'wallet' ? oracleWallet(address) : oracleRisk(address)
 }
 
 async function riskPolicyService(request: string): Promise<string> {

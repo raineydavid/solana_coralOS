@@ -1,0 +1,39 @@
+# Agent manifest — coral-server reads this to discover, launch, and configure the agent.
+# Docs: https://docs.coralos.ai/reference/agent · whole-kit walkthrough /CORAL.md
+#
+# seller-oracle — the premium on-chain intelligence specialist (STUK oracle market).
+# Reuses the seller-agent image; SERVICES=oracle + a higher FLOOR_SOL shape the persona. No API key
+# needed — it reads devnet directly, so it can always deliver a verifiable report and settle.
+edition = 4
+
+[agent]
+name = "seller-oracle"
+version = "0.1.0"
+description = "Marketplace seller persona — premium Solana on-chain intelligence. Sells verified wallet reports and counterparty trust scores read live from devnet (the `oracle` service)."
+summary = "A verified-accuracy specialist that bids on oracle jobs and delivers an on-chain counterparty risk read the buyer settles on."
+readme = "Bids in the shared market thread when the WANT is an `oracle` service, verifies the arbiter-funded escrow, reads the counterparty wallet straight off devnet, and delivers a trust score + recommendation bound to the order. Same image as seller-agent; SERVICES=oracle shapes it."
+
+[agent.license]
+type = "spdx"
+expression = "MIT"
+
+[options]
+SELLER_WALLET = { type = "string", description = "Devnet wallet pubkey that receives payments" }
+AGENT_NAME = { type = "string", default = "seller-oracle", description = "Market identity (matches the registry name)" }
+SERVICES = { type = "string", default = "oracle", description = "Inventory — this specialist bids only on oracle (on-chain intelligence) jobs" }
+FLOOR_SOL = { type = "f64", default = 0.0006, description = "Cost floor — the premium read prices above the discounters" }
+PERSONA = { type = "string", default = "a rigorous on-chain intelligence analyst who prices at a premium for a verified counterparty trust read and never overstates a signal", description = "Bidding persona (LLM system prompt)" }
+SERVICE = { type = "string", default = "oracle", description = "What deliverService returns: oracle (wallet <address> | risk <address>)" }
+SOLANA_RPC_URL = { type = "string", default = "", description = "Solana RPC URL (devnet) — the oracle reads chain state through it" }
+SETTLEMENT_MODE = { type = "string", default = "arbiter", description = "arbiter (default) | direct legacy base escrow" }
+ESCROW_DEADLINE_SECS = { type = "f64", default = 600, description = "Refund deadline for escrow deposits (seconds)" }
+ANTHROPIC_API_KEY = { type = "string", default = "", description = "Anthropic key — optional; only narrates the rationale, the score is deterministic" }
+OPENAI_API_KEY = { type = "string", default = "", description = "OpenAI key; set LLM_PROVIDER=openai to use it" }
+VENICE_API_KEY = { type = "string", default = "", description = "Venice AI key (OpenAI-compatible, free credits); set LLM_PROVIDER=venice to use it" }
+LLM_PROVIDER = { type = "string", default = "", description = "anthropic (default) | openai | venice — optional for the oracle" }
+LLM_MODEL = { type = "string", default = "", description = "Override the LLM model id" }
+TRACE = { type = "string", default = "", description = "Set to 1 to log CoralOS calls + on-chain reads" }
+
+# Reuses the already-built seller-agent image — no separate build needed.
+[runtimes.docker]
+image = "seller-agent:0.1.0"

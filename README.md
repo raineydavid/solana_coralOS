@@ -1,5 +1,10 @@
 # Solana CoralOS Agent Commerce
 
+> **STUK hackathon submission → [`SUBMISSION.md`](SUBMISSION.md).** This fork adds an **on-chain oracle
+> market**: an agent that sells a Solana counterparty **trust score** and settles it live on devnet.
+> One command — `cd examples/oracle-desk && npm install && npm run demo`. Deck:
+> [`docs/stuk-pitch-deck.html`](docs/stuk-pitch-deck.html).
+
 This repository implements a devnet reference system for paid agent services. Agents coordinate through CoralOS, exchange typed market messages, and settle orders through Solana payment rails. The default service uses TxODDS TxLINE football data, but the protocol, runtime packages, and examples are organized so other services can use the same payment and verification path.
 
 The repository is not mainnet production software. The working value flows are devnet-only unless a separate launch review changes the policy and configuration.
