@@ -45,8 +45,15 @@ premium analyst over the discount scout because a *verified* read is worth more 
 
 One WANT pulls in five roles: a **buyer**, two competing seller personas (**`seller-oracle`** premium,
 **`seller-scout`** discount), an independent **verifier** the buyer gates release on, and the
-**counterparty** being scored. Drop in another persona and the graph grows — the oracle is itself the
-"agent paid to verify another's work" from the track brief.
+**counterparty** being scored. And the graph pays in **two places**: on a VERIFIED pass the buyer
+releases the seller's price *and a fee to the verifier* — verification is itself a paid service, the
+"oracle paid to verify another's work" from the track brief, closed into the same settlement.
+
+**Verification that can't be sweet-talked.** The trust score is a *pure function of the delivered
+on-chain signals*, so the verifier **re-derives it from the delivery's own evidence**
+(`coral-agents/verifier-agent/src/verify.ts`). A seller that inflates its score is caught
+deterministically — keyless, no LLM, immune to prompt injection — even if an LLM judge would have been
+fooled. The model proposes; code enforces.
 
 ## Proof — settlement, live
 
@@ -62,11 +69,21 @@ market clearing on-chain. If verification fails, the buyer never pays — the no
   ```sh
   cd examples/oracle-desk && npm install && npm run demo -- <a-devnet-wallet>
   ```
-  With devnet reachable it reads live and settles with a real, reference-bound transfer that prints an
-  **Explorer link**. On a restricted network it runs the full loop against a clearly-labelled offline
-  sample and prints the exact transfer it would send.
+  With devnet reachable it reads live and settles with real, reference-bound transfers that print
+  **Explorer links** — one to the seller, one to the verifier. Every run writes `receipt.json`: the
+  delivery's sha256, the verdict, and a formal proof receipt per settlement leg
+  (`@pay/payment-runtime`). On a restricted network it runs the full loop against a clearly-labelled
+  offline sample and prints the exact transfers it would send.
+- **The dispute path — settlement holds up under a lying seller:**
+  ```sh
+  npm run demo:noshow
+  ```
+  The winner inflates its score; the verifier re-derives the score from the delivery's own signals,
+  catches the lie, `VERIFIED fail` — and the buyer **never pays**. The dishonest seller worked for
+  free. Lying costs the seller, never the buyer.
 - **Full escrow market** — the same lifecycle through the deployed **arbiter-escrow program**
-  (`R5NW…`), which locks the deposit and auto-refunds a no-show after the deadline. Keyless:
+  (`R5NW…`), with release **gated on the independent verifier** and an auto-refund for a no-show after
+  the deadline. Keyless:
   ```sh
   docker compose up coral -d
   MARKET=oracle npm start          # examples/marketplace — no TxLINE / LLM key required
@@ -79,9 +96,10 @@ market clearing on-chain. If verification fails, the buyer never pays — the no
 | `coral-agents/seller-agent/src/oracle.ts` | **New** — the on-chain oracle: live reads + deterministic trust score |
 | `coral-agents/seller-agent/src/service.ts` | Routes the `oracle` service keyword into `deliverService` |
 | `coral-agents/seller-agent/src/service.test.ts` | 3 new tests: wallet report, funded→safe, empty→high-risk |
+| `coral-agents/verifier-agent/src/verify.ts` | **Oracle re-derivation check** — a lying oracle is caught keylessly (4 new tests) |
 | `coral-agents/seller-oracle/` · `coral-agents/seller-scout/` | **New** personas — premium analyst, discount scout |
-| `examples/marketplace/start.ts` | **New** `MARKET=oracle` lineup — keyless on-chain-oracle market |
-| `examples/oracle-desk/` | **New** — the one-command standalone demo (this is what a judge runs) |
+| `examples/marketplace/start.ts` | **New** `MARKET=oracle` lineup — keyless, verifier-gated escrow market |
+| `examples/oracle-desk/` | **New** — one-command standalone demo: happy path, `--noshow` dispute path, paid verifier, proof receipts |
 
 Everything else — CoralOS transport, the market protocol, Solana Pay, the escrow program, the LLM shim,
 the policy engine — is the proven kit, imported and reused. We forked one function and stood up a market
@@ -90,8 +108,9 @@ around it, exactly as the track intended.
 ## Run the checks
 
 ```sh
-cd coral-agents/seller-agent && npm install && npm run typecheck && npm test   # 17/17, incl. oracle
-cd examples/oracle-desk       && npm install && npm run typecheck && npm run demo
+cd coral-agents/seller-agent   && npm install && npm run typecheck && npm test   # 17/17, incl. oracle
+cd coral-agents/verifier-agent && npm install && npm test                        # 11/11, incl. re-derivation
+cd examples/oracle-desk        && npm install && npm run typecheck && npm run demo && npm run demo:noshow
 ```
 
 ## Deliverables

@@ -1,20 +1,27 @@
 /**
  * oracle-desk — the one-command STUK demo.
  *
- *   npm install && npm run demo -- <devnet-wallet-to-score>
+ *   npm install && npm run demo -- <devnet-wallet-to-score>     # the happy path
+ *   npm run demo:noshow                                          # the dispute path
  *
  * Runs the whole agent-commerce loop IN ONE PROCESS, on devnet, with NO docker, NO CoralOS server,
  * and NO paid API keys:
  *
- *   WANT → BID → AWARD → ESCROW_REQUIRED → DELIVERED → VERIFIED → RELEASED
+ *   WANT → BID → AWARD → ESCROW_REQUIRED → DELIVERED → VERIFY → VERIFIED → RELEASED
  *
  * The service being sold is the Solana-native `oracle`: a buyer agent about to transact with an
  * unknown counterparty pays an oracle agent for a *counterparty trust score* read live off the chain.
  * Two seller personas (a premium analyst and a discount scout) compete for the job with real market
  * messages; the buyer awards best value; the winner reads the counterparty wallet straight off devnet
- * and delivers a score bound to the order; an INDEPENDENT verifier re-reads the chain and confirms it;
- * and only on a VERIFIED pass does the buyer RELEASE payment — a real, reference-bound devnet transfer
- * you can open in Explorer. If verification fails, the buyer never pays (the refund/no-show path).
+ * and delivers a score bound to the order; an INDEPENDENT verifier re-derives the score from the
+ * delivery's own signals AND re-reads the chain; and only on a VERIFIED pass does the buyer RELEASE
+ * payment — a real, reference-bound devnet transfer you can open in Explorer. The verifier earns a
+ * fee on the same release: verification is itself a paid service in this graph.
+ *
+ * The dispute path (`--noshow`): the winning seller cuts corners and inflates the trust score beyond
+ * what its own delivered signals support. The verifier catches the lie deterministically (the score is
+ * a pure function of the evidence), VERIFIED comes back `fail`, and the buyer never pays — funds stay
+ * with the buyer, exactly as the arbiter escrow would leave them refundable after the deadline.
  *
  * The moment that matters: the buyer decides to pay the instant verification passes. Everything before
  * it is the market discovering price; the transfer is the market clearing on-chain.
@@ -27,16 +34,17 @@
  * The market wire format, the Solana settlement primitives, and the devnet-guarded connection are all
  * imported from the kit runtime — this file only orchestrates them.
  */
-import { readFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { Keypair, LAMPORTS_PER_SOL, PublicKey } from '@solana/web3.js'
 import {
-  solanaConnection, signTransfer, verifyPayment,
+  solanaConnection, signTransfer, verifyPayment, sha256Hex,
   formatWant, parseWant, formatBid, parseBid, formatAward, parseAward,
-  formatEscrowRequired, parseEscrowRequired, formatVerified,
+  formatEscrowRequired, parseEscrowRequired, formatVerify, formatVerified,
   type Want,
 } from '@pay/agent-runtime'
+import { toProofReceipt } from '@pay/payment-runtime'
 import { readWalletBalance, readTokenBalances } from '@pay/solana-agent-tools'
 
 // ── tiny console theatre so the loop reads like a market, not a log dump ──────────────────────────
@@ -130,13 +138,18 @@ const bidOf = (s: Seller, want: Want) => Math.min(want.budgetSol, Math.max(s.flo
 
 async function main() {
   const env = loadEnv()
-  const target = process.argv[2] || env.ORACLE_TARGET || '9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM'
+  const flags = process.argv.slice(2)
+  // --noshow: the dispute path — the winning seller inflates its score; the verifier catches it.
+  const noshow = flags.includes('--noshow') || env.DEMO_NOSHOW === '1'
+  const target = flags.find((a) => !a.startsWith('--')) || env.ORACLE_TARGET || '9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM'
   const budgetSol = Number(env.BUYER_MAX_SOL ?? '0.001')
+  const verifierFeeSol = Number(env.VERIFIER_FEE_SOL ?? '0.0001') // verification is a paid service too
   const conn = solanaConnection(env.SOLANA_RPC_URL)
 
   console.log(`${c.b}${c.cy}\n  oracle-desk — agents buying a counterparty trust score, settled on devnet${c.x}`)
   console.log(`${c.dim}  one process · no docker · no CoralOS server · no paid keys${c.x}`)
-  wire(`cluster=devnet  budget=${sol(budgetSol)}  counterparty=${target}`)
+  if (noshow) console.log(`${c.y}  DISPUTE MODE — the winning seller will lie; watch the verifier catch it and the buyer keep its funds.${c.x}`)
+  wire(`cluster=devnet  budget=${sol(budgetSol)}  verifier-fee=${sol(verifierFeeSol)}  counterparty=${target}`)
 
   // Sanity: the target must be a valid pubkey before we run the market.
   try { new PublicKey(target) } catch { console.error(`${c.r}invalid wallet address: ${target}${c.x}`); process.exit(1) }
@@ -195,42 +208,92 @@ async function main() {
   say(winner.s.name, 'reading the counterparty wallet live off devnet…')
   const { facts, offline } = await readFactsSafe(target)
   if (offline) console.log(`   ${c.y}⚠ devnet unreachable from this host (egress blocked) — using a labelled OFFLINE SAMPLE.${c.x}\n   ${c.dim}On a network with devnet access this is a live read + a real settlement tx.${c.x}`)
-  const report = score(facts)
+  let report = score(facts)
+  if (noshow) {
+    // The lazy seller pads its number: claims a near-perfect score its own evidence doesn't support.
+    report = { ...report, trustScore: Math.min(100, report.trustScore + 38), recommendation: 'safe-to-escrow' }
+    say(winner.s.name, `${c.dim}(cutting corners: inflating the score to ${report.trustScore}/100 and hoping nobody checks)${c.x}`)
+  }
   const delivery = { service: 'oracle-risk', round, reference: terms.reference, address: facts.address, ...report, signals: facts }
+  const payload = JSON.stringify(delivery)
   console.log(`   ${c.g}DELIVERED${c.x} trustScore=${c.b}${report.trustScore}/100${c.x} band=${report.band} → ${c.b}${report.recommendation}${c.x}`)
   wire(report.rationale)
 
-  // ── 6. VERIFIED — an INDEPENDENT verifier re-reads the chain and must agree ───────────────────────
-  stage(6, 'independent verifier re-reads the chain')
-  const check = score((await readFactsSafe(target)).facts)
-  const verified = Math.abs(check.trustScore - report.trustScore) <= 5 && check.recommendation === report.recommendation
+  // ── 6. VERIFY → VERIFIED — the buyer content-hashes the artifact and hands it to an INDEPENDENT
+  //      verifier, which re-derives the score from the delivery's own signals AND re-reads the chain.
+  stage(6, 'independent verifier re-derives the score')
+  const sha = sha256Hex(payload) // payment binds to THIS artifact — same leg the CoralOS buyer runs
+  wire(`${formatVerify({ round, service: 'oracle', arg: target, sha, payload }).slice(0, 108)}…`)
+  // Check 1 — internal consistency: the trust score is a pure function of the delivered signals.
+  const rederived = score(delivery.signals)
+  const consistent = rederived.trustScore === report.trustScore && rederived.recommendation === report.recommendation
+  // Check 2 — independent re-read: the verifier reads the same chain itself.
+  const reread = score((await readFactsSafe(target)).facts)
+  const matchesChain = Math.abs(reread.trustScore - report.trustScore) <= 5
+  const verified = consistent && matchesChain
+  if (!consistent) say('verifier', `${c.r}claim ≠ evidence${c.x} — delivered signals support ${rederived.trustScore}/100, seller claims ${report.trustScore}/100.`)
   say('verifier', verified
-    ? `${c.g}VERIFIED pass${c.x} — re-read the chain, score matches (${check.trustScore}/100).`
-    : `${c.r}VERIFIED fail${c.x} — re-read disagrees (${check.trustScore} vs ${report.trustScore}). Buyer will NOT pay.`)
-  wire(formatVerified({ round, verdict: verified ? 'pass' : 'fail', by: 'verifier', reason: verified ? 'chain re-read matches' : 'mismatch' }))
+    ? `${c.g}VERIFIED pass${c.x} — score re-derived from signals ✓, chain re-read agrees (${reread.trustScore}/100) ✓.`
+    : `${c.r}VERIFIED fail${c.x} — ${consistent ? `chain re-read disagrees (${reread.trustScore} vs ${report.trustScore})` : 'the delivery contradicts its own evidence'}. Buyer will NOT pay.`)
+  wire(formatVerified({ round, verdict: verified ? 'pass' : 'fail', by: 'verifier', sha, reason: verified ? 'score re-derived; chain re-read matches' : 'claim does not match evidence' }))
 
-  // ── 7. RELEASED — the buyer decides to pay, on-chain, only now ────────────────────────────────────
+  // ── 7. RELEASED (or refused) — the buyer decides to pay, on-chain, only now ───────────────────────
   stage(7, 'settlement')
-  if (!verified) { console.log(`   ${c.y}No VERIFIED pass → funds stay with the buyer (the no-show/refund path).${c.x}`); return }
-
-  const funded = await ensureFunds(conn, buyer, winner.priceSol, ephemeral)
-  if (!funded.ok) {
-    console.log(`   ${c.y}SIMULATED settlement${c.x} (buyer wallet unfunded${ephemeral ? ' and devnet airdrop unavailable' : ''}).`)
-    console.log(`   ${c.dim}Would transfer ${sol(winner.priceSol)} to ${terms.seller} tagged with reference ${terms.reference}.${c.x}`)
-    console.log(`   ${c.dim}Fund BUYER_KEYPAIR_B58 in .env (a few devnet SOL) and re-run for a live Explorer link.${c.x}`)
-    console.log(`\n${c.b}${c.g}✔ Loop complete${c.x} — WANT→BID→AWARD→ESCROW_REQUIRED→DELIVERED→VERIFIED→RELEASED (settlement simulated).`)
+  const receiptPath = join(dirname(fileURLToPath(import.meta.url)), 'receipt.json')
+  if (!verified) {
+    say('buyer', `${c.y}release REFUSED${c.x} — no VERIFIED pass, no payment. My ${sol(winner.priceSol)} stays with me.`)
+    console.log(`   ${c.dim}In the arbiter-escrow market the deposit would now sit locked until the ${terms.deadlineSecs}s deadline, then refund.${c.x}`)
+    console.log(`   ${c.dim}The dishonest seller worked for free — lying costs the seller, never the buyer.${c.x}`)
+    writeReceipt(receiptPath, { round, sha, verdict: 'fail', legs: [
+      toProofReceipt({ paid: false, rail: 'solana-pay', amount: String(winner.priceSol), currency: 'SOL', recipient: terms.seller, reference: terms.reference, reason: 'verifier failed delivery — release refused' }, { provider: winner.s.name, service: 'oracle-risk' }),
+    ] })
+    console.log(`\n${c.b}${c.y}✔ Dispute path complete${c.x} — DELIVERED→VERIFIED fail→release refused. Settlement held up under a lying seller.`)
+    console.log(`${c.dim}   receipt: ${receiptPath}${c.x}`)
     return
   }
 
-  say('buyer', `verification passed — releasing ${sol(winner.priceSol)} now.`)
+  // Verification is a paid role in this graph: the verifier earns a fee on the same release.
+  const verifierWallet = env.VERIFIER_WALLET || Keypair.generate().publicKey.toBase58()
+  const verifierRef = Keypair.generate().publicKey.toBase58() // its own single-use reference
+  const totalOut = winner.priceSol + verifierFeeSol
+
+  const funded = await ensureFunds(conn, buyer, totalOut, ephemeral)
+  if (!funded.ok) {
+    console.log(`   ${c.y}SIMULATED settlement${c.x} (buyer wallet unfunded${ephemeral ? ' and devnet airdrop unavailable' : ''}).`)
+    console.log(`   ${c.dim}Would transfer ${sol(winner.priceSol)} to seller ${terms.seller.slice(0, 8)}… ref=${terms.reference.slice(0, 8)}…${c.x}`)
+    console.log(`   ${c.dim}Would transfer ${sol(verifierFeeSol)} to verifier ${verifierWallet.slice(0, 8)}… ref=${verifierRef.slice(0, 8)}… (verification is paid work)${c.x}`)
+    console.log(`   ${c.dim}Fund BUYER_KEYPAIR_B58 in .env (a few devnet SOL) and re-run for live Explorer links.${c.x}`)
+    writeReceipt(receiptPath, { round, sha, verdict: 'pass', legs: [
+      toProofReceipt({ paid: true, rail: 'solana-pay', proof: terms.reference, amount: String(winner.priceSol), currency: 'SOL', recipient: terms.seller, reference: terms.reference }, { provider: winner.s.name, service: 'oracle-risk', simulated: true }),
+      toProofReceipt({ paid: true, rail: 'solana-pay', proof: verifierRef, amount: String(verifierFeeSol), currency: 'SOL', recipient: verifierWallet, reference: verifierRef }, { provider: 'verifier', service: 'oracle-verify', simulated: true }),
+    ] })
+    console.log(`\n${c.b}${c.g}✔ Loop complete${c.x} — WANT→BID→AWARD→ESCROW_REQUIRED→DELIVERED→VERIFIED→RELEASED (settlement simulated).`)
+    console.log(`${c.dim}   receipt: ${receiptPath}${c.x}`)
+    return
+  }
+
+  say('buyer', `verification passed — releasing ${sol(winner.priceSol)} to the seller and ${sol(verifierFeeSol)} to the verifier now.`)
   const sig = await signTransfer(buyer, terms.seller, winner.priceSol, { reference: terms.reference, maxSol: budgetSol })
   // The seller proves the payment is bound to THIS order by finding the reference on-chain.
   const ok = await verifyPayment(sig, { recipient: terms.seller, amountSol: winner.priceSol, reference: terms.reference })
-  console.log(`   ${c.g}${c.b}RELEASED${c.x} ${sol(winner.priceSol)} settled on devnet · reference-verified=${ok}`)
+  console.log(`   ${c.g}${c.b}RELEASED${c.x} ${sol(winner.priceSol)} → seller · reference-verified=${ok}`)
+  const vsig = await signTransfer(buyer, verifierWallet, verifierFeeSol, { reference: verifierRef, maxSol: budgetSol })
+  console.log(`   ${c.g}${c.b}RELEASED${c.x} ${sol(verifierFeeSol)} → verifier (the graph pays for honesty, too)`)
+  writeReceipt(receiptPath, { round, sha, verdict: 'pass', legs: [
+    toProofReceipt({ paid: true, rail: 'solana-pay', proof: terms.reference, txSignature: sig, amount: String(winner.priceSol), currency: 'SOL', recipient: terms.seller, reference: terms.reference }, { provider: winner.s.name, service: 'oracle-risk' }),
+    toProofReceipt({ paid: true, rail: 'solana-pay', proof: verifierRef, txSignature: vsig, amount: String(verifierFeeSol), currency: 'SOL', recipient: verifierWallet, reference: verifierRef }, { provider: 'verifier', service: 'oracle-verify' }),
+  ] })
   console.log(`\n   ${c.b}Proof (open in a browser):${c.x}`)
-  console.log(`     tx        ${c.cy}${explorer('tx', sig)}${c.x}`)
-  console.log(`     reference ${c.cy}${explorer('address', terms.reference)}${c.x}`)
-  console.log(`\n${c.b}${c.g}✔ An agent bought a verified on-chain read and paid for it, live, no human in the loop.${c.x}`)
+  console.log(`     seller tx    ${c.cy}${explorer('tx', sig)}${c.x}`)
+  console.log(`     verifier tx  ${c.cy}${explorer('tx', vsig)}${c.x}`)
+  console.log(`     reference    ${c.cy}${explorer('address', terms.reference)}${c.x}`)
+  console.log(`     receipt      ${c.dim}${receiptPath}${c.x}`)
+  console.log(`\n${c.b}${c.g}✔ Two agents earned on one order — the oracle for the read, the verifier for checking it. No human in the loop.${c.x}`)
+}
+
+/** Durable run artifact: the delivery hash, the verdict, and a formal proof receipt per settlement leg. */
+function writeReceipt(path: string, r: { round: number; sha: string; verdict: 'pass' | 'fail'; legs: unknown[] }): void {
+  writeFileSync(path, JSON.stringify({ demo: 'oracle-desk', cluster: 'devnet', round: r.round, deliverySha256: r.sha, verdict: r.verdict, proofReceipts: r.legs }, null, 2))
 }
 
 // ── fund the buyer just enough to settle: use an existing balance, else airdrop an ephemeral key ──

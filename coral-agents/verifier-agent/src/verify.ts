@@ -4,6 +4,9 @@
  * Deterministic checks decide first (they cannot be prompt-injected):
  *   1. content hash — the payload must hash to the sha the buyer received (payment binds to THIS artifact)
  *   2. structure    — the payload must be JSON and not a top-level error report
+ *   3. recomputation — for services whose deliverable is derivable from its own evidence (the
+ *      `oracle` trust score is a pure function of the delivered on-chain signals), the verifier
+ *      RE-DERIVES the result and fails a seller whose claim doesn't match its own evidence.
  * Only then does the (optional) LLM acceptance judge get a say; if it is unavailable, the
  * deterministic checks stand. Mirrors the decideBid pattern: the model proposes, code enforces.
  */
@@ -36,6 +39,14 @@ export async function checkDelivery(req: VerifyRequest, name: string, llm: Llm =
   ) {
     return { ...base, verdict: 'pass', reason: 'hash + txline fixture verified' }
   }
+  // Oracle deliveries are self-evidencing: the payload carries the raw on-chain signals AND the
+  // score claimed from them. Re-derive the score; a seller that inflates its claim is caught here,
+  // deterministically, with no LLM and no network. (The signals themselves are chain facts any
+  // party can independently re-read — the buyer paid for exactly this artifact, hash-bound above.)
+  if (req.service === 'oracle' && structured?.service === 'oracle-risk') {
+    const oracle = checkOracleRisk(structured, req.arg)
+    if (oracle) return { ...base, ...oracle }
+  }
 
   try {
     const parsed = parseJsonReply<{ pass?: boolean; reason?: string }>(await llm({
@@ -52,4 +63,51 @@ export async function checkDelivery(req: VerifyRequest, name: string, llm: Llm =
     // judge unavailable -> the deterministic checks above decide
   }
   return { ...base, verdict: 'pass', reason: 'hash + structure verified' }
+}
+
+interface OracleSignals { solBalance: number; tokenAccounts: number; recentTxCount: number; isExecutable: boolean }
+
+/**
+ * Re-derive an `oracle-risk` delivery from its own evidence. The scoring math mirrors
+ * coral-agents/seller-agent/src/oracle.ts `scoreCounterparty` — a pure function of the signals —
+ * so claim and evidence must agree or the delivery fails and the escrow is never released.
+ * Returns null when the payload lacks usable signals (generic checks then decide).
+ */
+export function checkOracleRisk(
+  payload: Record<string, unknown>,
+  arg: string,
+): { verdict: 'pass' | 'fail'; reason: string } | null {
+  const s = payload.signals as Partial<OracleSignals> | undefined
+  const claimed = payload.trustScore
+  if (!s || typeof claimed !== 'number' ||
+      typeof s.solBalance !== 'number' || typeof s.tokenAccounts !== 'number' ||
+      typeof s.recentTxCount !== 'number' || typeof s.isExecutable !== 'boolean') return null
+
+  if (String(payload.address ?? '') !== arg) {
+    return { verdict: 'fail', reason: 'oracle scored the wrong address' }
+  }
+
+  let expected: number
+  if (s.isExecutable) {
+    expected = 80
+  } else {
+    let sc = 0
+    if (s.solBalance > 0) sc += 25
+    if (s.solBalance >= 0.1) sc += 10
+    sc += Math.min(25, s.recentTxCount)
+    if (s.tokenAccounts > 0) sc += 15
+    sc += Math.min(10, s.tokenAccounts * 3)
+    expected = Math.max(0, Math.min(100, sc))
+  }
+  if (claimed !== expected) {
+    return { verdict: 'fail', reason: `oracle score ${claimed} does not match its own signals (${expected})` }
+  }
+
+  const rec = String(payload.recommendation ?? '')
+  const expectedRec = expected >= 60 ? 'safe-to-escrow' : expected >= 30 ? 'escrow-with-caution' : 'high-no-show-risk'
+  if (rec !== expectedRec) {
+    return { verdict: 'fail', reason: `oracle recommendation inconsistent with score (${expected} -> ${expectedRec})` }
+  }
+
+  return { verdict: 'pass', reason: 'hash + oracle score re-derived from signals' }
 }

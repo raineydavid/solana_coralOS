@@ -6,7 +6,8 @@ No docker, no CoralOS server, no paid API keys.
 ```sh
 cd examples/oracle-desk
 npm install
-npm run demo -- <a-devnet-wallet-to-score>
+npm run demo -- <a-devnet-wallet-to-score>   # the happy path: verified delivery, on-chain release
+npm run demo:noshow                           # the dispute path: the seller lies, the buyer keeps its funds
 ```
 
 `<a-devnet-wallet-to-score>` is the counterparty the buyer wants a read on. Omit it to use the default.
@@ -25,12 +26,28 @@ WANT → BID → AWARD → ESCROW_REQUIRED → DELIVERED → VERIFIED → RELEAS
 3. **AWARD** — the buyer awards **best value**, not just cheapest (a verified read is worth the premium).
 4. **ESCROW_REQUIRED** — the winner binds a single-use **reference key** to this exact order.
 5. **DELIVERED** — the winner reads the counterparty wallet **live off devnet** and returns a trust score.
-6. **VERIFIED** — an **independent verifier** re-reads the chain and must agree, or the buyer walks.
-7. **RELEASED** — only on a VERIFIED pass does the buyer pay: a real, reference-bound devnet transfer
-   with an **Explorer link**. Verification fails → the buyer never pays (the no-show / refund path).
+6. **VERIFY → VERIFIED** — the buyer content-hashes the artifact and hands it to an **independent
+   verifier**, which **re-derives the score from the delivery's own signals** (the score is a pure
+   function of the evidence) *and* re-reads the chain itself. Disagree → the buyer walks.
+7. **RELEASED** — only on a VERIFIED pass does the buyer pay: reference-bound devnet transfers with
+   **Explorer links** — one to the seller, and a **fee to the verifier**. Two agents earn on one order;
+   verification is itself a paid service in this graph.
 
 **The moment that matters:** the buyer decides to pay the instant verification passes. The transfer is
 the market clearing on-chain.
+
+## The dispute path (`npm run demo:noshow`)
+
+The judging question — *does settlement hold up under dispute / no-show?* Run it and watch:
+
+- the winning seller **inflates the trust score** beyond what its own delivered signals support;
+- the verifier **catches the lie deterministically** — claim ≠ evidence, no LLM needed;
+- `VERIFIED fail` → the buyer **refuses release** and keeps its funds (in the arbiter-escrow market the
+  deposit would sit locked until the deadline, then refund);
+- **the dishonest seller worked for free.** Lying costs the seller, never the buyer.
+
+Every run writes `receipt.json` — the delivery's sha256, the verdict, and a formal proof receipt per
+settlement leg (built with `@pay/payment-runtime`'s `toProofReceipt`).
 
 ## Settlement: what's real
 
@@ -61,3 +78,6 @@ the market clearing on-chain.
 | `BUYER_MAX_SOL` | `0.001` | Code-enforced budget cap |
 | `ORACLE_TARGET` | a sample wallet | Counterparty to score if no CLI arg is given |
 | `ORACLE_FLOOR` / `SCOUT_FLOOR` | `0.0006` / `0.0002` | Per-persona cost floors |
+| `VERIFIER_FEE_SOL` | `0.0001` | The verifier's fee, released on a pass |
+| `VERIFIER_WALLET` | ephemeral | Verifier payout address |
+| `DEMO_NOSHOW` | unset | `1` = dispute mode (same as `--noshow`) |

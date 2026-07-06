@@ -50,3 +50,48 @@ describe('checkDelivery - deterministic checks decide first', () => {
     expect(v).toMatchObject({ verdict: 'pass', reason: 'fits the order' })
   })
 })
+
+describe('checkDelivery - oracle score re-derivation (keyless, adversarial)', () => {
+  const ADDR = 'So11111111111111111111111111111111111111112'
+  const oraclePayload = (over: Record<string, unknown> = {}) => JSON.stringify({
+    service: 'oracle-risk',
+    address: ADDR,
+    // signals: 3 SOL (+25 +10), 40 recent tx (+25 capped), 1 token account (+15 +3) => 78, safe-to-escrow
+    trustScore: 78,
+    recommendation: 'safe-to-escrow',
+    signals: { solBalance: 3, tokenAccounts: 1, recentTxCount: 40, isExecutable: false, funded: true },
+    ...over,
+  })
+  const oreq = (payload: string): VerifyRequest => ({
+    round: 7, service: 'oracle', arg: ADDR, sha: sha256Hex(payload), payload,
+  })
+
+  it('passes an honest oracle delivery without consulting the LLM', async () => {
+    const p = oraclePayload()
+    const v = await checkDelivery(oreq(p), 'v', llmSays('{"pass":false,"reason":"should not be asked"}'))
+    expect(v).toMatchObject({ verdict: 'pass', reason: 'hash + oracle score re-derived from signals' })
+  })
+
+  it('fails a seller that inflates the score beyond its own signals', async () => {
+    const p = oraclePayload({ trustScore: 95 }) // claims 95, evidence supports 78
+    const v = await checkDelivery(oreq(p), 'v', llmSays('{"pass":true}')) // even a fooled LLM cannot save it
+    expect(v.verdict).toBe('fail')
+    expect(v.reason).toContain('does not match its own signals')
+  })
+
+  it('fails a recommendation inconsistent with the score', async () => {
+    const p = oraclePayload({
+      trustScore: 10, recommendation: 'safe-to-escrow',
+      signals: { solBalance: 0, tokenAccounts: 0, recentTxCount: 10, isExecutable: false, funded: false },
+    })
+    const v = await checkDelivery(oreq(p), 'v', llmDown)
+    expect(v.verdict).toBe('fail')
+    expect(v.reason).toContain('recommendation inconsistent')
+  })
+
+  it('fails an oracle that scored a different address than the order asked for', async () => {
+    const p = oraclePayload({ address: '9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM' })
+    const v = await checkDelivery(oreq(p), 'v', llmDown)
+    expect(v).toMatchObject({ verdict: 'fail', reason: 'oracle scored the wrong address' })
+  })
+})

@@ -215,14 +215,16 @@ VERIFIED    round=1 verdict=<span class="k">pass</span> by=verifier   <span clas
         <div class="node win"><span class="role">Seller · premium</span><span class="name">seller-oracle</span></div>
         <div class="node"><span class="role">Seller · discount</span><span class="name">seller-scout</span></div>
       </div>
-      <div class="node"><span class="role">Verifier</span><span class="name">verifier-agent</span></div>
+      <div class="node"><span class="role">Verifier · earns a fee</span><span class="name">verifier-agent</span></div>
       <div class="hub">gates<br>release</div>
       <div class="node"><span class="role">Counterparty</span><span class="name">the scored wallet</span></div>
     </div>
     <p class="lead">Two personas <strong>compete on price</strong>; the buyer awards the premium analyst
-      because a verified read is worth more than a raw lookup. An independent verifier keeps everyone
-      honest. Drop in another agent and the graph grows — the oracle <em>is</em> the agent paid to
-      verify another's work.</p>
+      because a verified read is worth more than a raw lookup. The graph pays in <strong>two
+      places</strong>: seller price <em>and</em> a verifier fee on the same release — verification is
+      itself a paid service. And it can't be sweet-talked: the score is a <strong>pure function of the
+      delivered signals</strong>, so the verifier <em>re-derives</em> it — a lying oracle is caught by
+      code, not judgement.</p>
   </section>
 
   <!-- 5 · PROOF / HOW IT HOLDS UP / CTA -->
@@ -239,14 +241,15 @@ VERIFIED    round=1 verdict=<span class="k">pass</span> by=verifier   <span clas
       <span class="step pay">RELEASED</span>
     </div>
     <div class="grid cols-3">
-      <div class="card"><span class="kicker">Deterministic</span><p>Score is pure on-chain facts — anyone can re-verify; the seller can always deliver.</p></div>
-      <div class="card"><span class="kicker">Reference-bound</span><p>A single-use key ties the payment to one order — the proof isn't transferable.</p></div>
-      <div class="card"><span class="kicker">Composable</span><p>Every new agent turns a pair into a graph. The arbiter escrow refunds a no-show.</p></div>
+      <div class="card"><span class="kicker">Deterministic</span><p>Score is pure on-chain facts — the verifier re-derives it; a lying seller is caught by code.</p></div>
+      <div class="card"><span class="kicker">Reference-bound</span><p>A single-use key ties each payment to one order — the proof isn't transferable. Every run writes a proof receipt.</p></div>
+      <div class="card"><span class="kicker">Dispute-proof</span><p><span class="amber">VERIFIED fail → release refused.</span> The dishonest seller works for free; the escrow refunds a no-show.</p></div>
     </div>
     <div class="callout">
-      <p class="lead">One command, live on devnet:</p>
+      <p class="lead">One command, live on devnet — and one for the dispute:</p>
       <p class="wire" style="margin-top:8px"><span class="k">cd</span> examples/oracle-desk &amp;&amp; npm install &amp;&amp; <span class="k">npm run demo</span> <span class="d">-- &lt;a-devnet-wallet&gt;</span>
-<span class="d"># full escrow market, keyless:</span>  <span class="k">MARKET=oracle</span> npm start</p>
+<span class="a">npm run demo:noshow</span>   <span class="d"># the seller lies → verifier catches it → the buyer keeps its funds</span>
+<span class="d"># full escrow market, verifier-gated, keyless:</span>  <span class="k">MARKET=oracle</span> npm start</p>
     </div>
     <p class="lead mono" style="color:var(--ink-faint)">Built on the proven Solana × CoralOS rails · runs on devnet today · no keys committed.</p>
   </section>

@@ -100,6 +100,14 @@ async function main() {
     ? ['seller-oracle', 'seller-scout']
     : ['seller-worldcup', 'seller-cheap', 'seller-premium']
 
+  // The oracle market gates release on the independent verifier: the buyer content-hashes each
+  // delivery and hands it over (VERIFY); the verifier RE-DERIVES the trust score from the payload's
+  // own on-chain signals (keyless, deterministic — see coral-agents/verifier-agent/src/verify.ts) and
+  // only a VERIFIED pass releases the escrow. An oracle that inflates its score never gets paid.
+  const verifierAgents = isOracle
+    ? [agent('verifier-agent', { AGENT_NAME: str('verifier-agent'), ...llmOpts })]
+    : []
+
   // Optional broker swarm (ENABLE_BROKER=1, see coral-agents/broker/README.md): the buyer buys from a
   // broker, which resells from the real sellers. Needs a funded broker wallet + seller receive wallets —
   // `node scripts/provision-swarm.js`.
@@ -141,6 +149,8 @@ async function main() {
     BUYER_ARG: str(buyerArg),
     ...(buyerArgs ? { BUYER_ARGS: str(buyerArgs) } : {}),
     MARKET_SELLERS: str(buyerSellers.join(',')),
+    // Oracle market: release is gated on the independent verifier's VERIFIED pass.
+    ...(isOracle ? { VERIFIER_AGENT: str('verifier-agent') } : {}),
     ...llmOpts,
   }
 
@@ -154,6 +164,7 @@ async function main() {
         agents: [
           agent('buyer-agent', buyerOpts),
           ...sellers.map(seller),
+          ...verifierAgents,
           ...brokerAgents,
         ],
       },
@@ -164,7 +175,9 @@ async function main() {
   if (!sres.ok) throw new Error(`session create failed: ${sres.status} ${await sres.text()}`)
   const { sessionId } = await sres.json() as { sessionId: string }
 
-  const lineup = brokerReady ? `broker (reselling ${sellers.join(', ')})` : sellers.join(', ')
+  const lineup = brokerReady
+    ? `broker (reselling ${sellers.join(', ')})`
+    : sellers.join(', ') + (isOracle ? ' + verifier-agent (gates release)' : '')
   const product = isOracle ? `on-chain intelligence (oracle ${buyerArg})` : 'verified TxODDS reads'
   console.log(`\n✅ ${isOracle ? 'Oracle' : 'Market'} session ${sessionId} — buyer + ${lineup}.`)
   console.log(`   selling: ${product}`)
