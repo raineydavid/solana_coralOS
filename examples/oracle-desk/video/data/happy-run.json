@@ -1,0 +1,58 @@
+{
+  "title": "oracle-desk — the happy path",
+  "subtitle": "an agent buys a verified on-chain trust score, and pays for it live on devnet",
+  "beats": [
+    {
+      "stage": 1,
+      "label": "buyer broadcasts a WANT",
+      "speaker": "buyer",
+      "line": "I need a trust read on ‹counterparty-wallet› before I transact. Budget 0.005 SOL.",
+      "wire": "WANT round=1 service=oracle arg=‹counterparty-wallet› budget=0.005"
+    },
+    {
+      "stage": 2,
+      "label": "oracle sellers compete",
+      "wire": ["BID round=1 price=0.003 by=seller-oracle note=available", "BID round=1 price=0.002 by=seller-scout note=available"]
+    },
+    {
+      "stage": 3,
+      "label": "buyer awards best value",
+      "speaker": "buyer",
+      "line": "AWARD → seller-oracle @ 0.003 SOL — verified analyst read is worth the premium; still within budget",
+      "wire": "AWARD round=1 to=seller-oracle reason=\"verified analyst read is worth the premium; still within budget\""
+    },
+    {
+      "stage": 4,
+      "label": "winner opens settlement (reference-bound)",
+      "speaker": "seller-oracle",
+      "line": "ESCROW_REQUIRED ref=‹reference-key› amount=0.003 SOL deadline=600s",
+      "wire": "ESCROW_REQUIRED round=1 reference=‹reference-key› seller=‹seller-wallet› amount=0.003 deadline=600 settlement=direct"
+    },
+    {
+      "stage": 5,
+      "label": "winner delivers the on-chain read",
+      "speaker": "seller-oracle",
+      "line": "reading the counterparty wallet live off devnet…",
+      "result": { "trustScore": 74, "band": "established", "recommendation": "safe-to-escrow" },
+      "detail": "established wallet: 4.730 SOL, 1 token position(s), 21 recent tx."
+    },
+    {
+      "stage": 6,
+      "label": "independent verifier re-derives the score",
+      "speaker": "verifier",
+      "line": "VERIFIED pass — score re-derived from signals ✓, chain re-read agrees (74/100) ✓",
+      "wire": "VERIFIED round=1 verdict=pass by=verifier reason=\"score re-derived; chain re-read matches\""
+    },
+    {
+      "stage": 7,
+      "label": "settlement",
+      "speaker": "buyer",
+      "line": "verification passed — releasing 0.003 SOL to the seller and 0.0015 SOL to the verifier now.",
+      "released": [
+        { "amount": "0.003 SOL", "to": "seller" },
+        { "amount": "0.0015 SOL", "to": "verifier" }
+      ],
+      "closing": "Two agents earned on one order — the oracle for the read, the verifier for checking it. No human in the loop."
+    }
+  ]
+}

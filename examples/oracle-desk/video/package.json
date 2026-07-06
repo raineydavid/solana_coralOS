@@ -1,0 +1,23 @@
+{
+  "name": "oracle-desk-video",
+  "private": true,
+  "type": "module",
+  "description": "Renders a proof clip of the oracle-desk demo (happy path + dispute path) from real run data — no screen recording needed.",
+  "scripts": {
+    "preview": "remotion studio src/index.tsx",
+    "render:happy": "remotion render src/index.tsx oracle-happy out/happy.mp4",
+    "render:dispute": "remotion render src/index.tsx oracle-dispute out/dispute.mp4",
+    "render": "npm run render:happy && npm run render:dispute",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "remotion": "^4.0.485"
+  },
+  "devDependencies": {
+    "@remotion/cli": "^4.0.485",
+    "@types/react": "^18.3.1",
+    "typescript": "^5.4.0"
+  }
+}

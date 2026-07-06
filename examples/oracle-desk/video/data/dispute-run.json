@@ -1,0 +1,34 @@
+{
+  "title": "oracle-desk — the dispute path",
+  "subtitle": "the seller lies about its own evidence; the verifier catches it; the buyer keeps its funds",
+  "beats": [
+    {
+      "stage": 4,
+      "label": "winner opens settlement (reference-bound)",
+      "speaker": "seller-oracle",
+      "line": "ESCROW_REQUIRED ref=‹reference-key› amount=0.003 SOL deadline=600s"
+    },
+    {
+      "stage": 5,
+      "label": "winner delivers the on-chain read",
+      "speaker": "seller-oracle",
+      "line": "(cutting corners: inflating the score to 100/100 and hoping nobody checks)",
+      "result": { "trustScore": 100, "band": "established", "recommendation": "safe-to-escrow", "dishonest": true },
+      "detail": "established wallet: 4.730 SOL, 1 token position(s), 21 recent tx."
+    },
+    {
+      "stage": 6,
+      "label": "independent verifier re-derives the score",
+      "speaker": "verifier",
+      "line": "claim ≠ evidence — delivered signals support 74/100, seller claims 100/100.",
+      "verdict": "VERIFIED fail — the delivery contradicts its own evidence. Buyer will NOT pay."
+    },
+    {
+      "stage": 7,
+      "label": "settlement",
+      "speaker": "buyer",
+      "line": "release REFUSED — no VERIFIED pass, no payment. My 0.003 SOL stays with me.",
+      "closing": "The dishonest seller worked for free — lying costs the seller, never the buyer."
+    }
+  ]
+}

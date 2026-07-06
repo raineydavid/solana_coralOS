@@ -100,6 +100,8 @@ market clearing on-chain. If verification fails, the buyer never pays — the no
 | `coral-agents/seller-oracle/` · `coral-agents/seller-scout/` | **New** personas — premium analyst, discount scout |
 | `examples/marketplace/start.ts` | **New** `MARKET=oracle` lineup — keyless, verifier-gated escrow market |
 | `examples/oracle-desk/` | **New** — one-command standalone demo: happy path, `--noshow` dispute path, paid verifier, proof receipts |
+| `examples/oracle-desk/web/` | **New** — connect a Solana wallet (Phantom/Solflare, Wallet Standard), get its live trust score client-side |
+| `examples/oracle-desk/video/` | **New** — renders the demo's real event log into a proof clip with Remotion, no screen recording |
 
 Everything else — CoralOS transport, the market protocol, Solana Pay, the escrow program, the LLM shim,
 the policy engine — is the proven kit, imported and reused. We forked one function and stood up a market
@@ -120,9 +122,12 @@ cd examples/oracle-desk        && npm install && npm run typecheck && npm run de
   live on devnet from a GitHub runner — the job summary carries the transcript highlights and Explorer
   links, and the `stuk-demo-proof` artifact carries full transcripts + formal proof receipts. Add a
   funded devnet key as the `BUYER_KEYPAIR_B58` repo secret for guaranteed live settlement links.
+- **Try it live:** `examples/oracle-desk/web` — connect a wallet, get its trust score in the browser.
 - **Pitch deck (5 slides):** `docs/stuk-pitch-deck.html` — open in a browser, press → to advance.
+- **Proof clips, rendered not screen-recorded:** `examples/oracle-desk/video` — `npm run render`
+  produces `happy.mp4` / `dispute.mp4` from the demo's real event log via headless Remotion.
 - **Demo video script (3 min):** `docs/stuk-demo-video-script.md`.
-- **Repo:** public, no keys committed (`.env` is git-ignored; see `.env.example`).
+- **Repo:** public, no keys or wallet addresses committed (`.env` is git-ignored; see `.env.example`).
 
 ## Not production
 
