@@ -43,7 +43,7 @@ Screen-record the terminal running `npm run demo`. Let the stages land one at a 
 
 > **VO (as each stage prints):**
 >
-> - **WANT** — "The buyer needs a read on this wallet before it transacts. Budget: a thousandth of a SOL."
+> - **WANT** — "The buyer needs a read on this wallet before it transacts. Budget: 0.005 SOL."
 > - **BID** — "Two sellers bid in real market messages. The scout is cheaper. The analyst is dearer."
 > - **AWARD** — "And the buyer picks the analyst — *best value, not cheapest*. A verified read is worth
 >   the premium, and it's inside a budget the code enforces. No human approved this."
@@ -119,7 +119,7 @@ no-show.")*
 
 1. **Customer:** an agent, not a human — it needs the read to decide whether to pay another agent.
 2. **What it sells:** `oracle risk <wallet>` — a live counterparty trust score, in one line.
-3. **Why they pay:** a wrong counterparty costs the whole transaction; the read costs 0.0006 SOL.
+3. **Why they pay:** a wrong counterparty costs the whole transaction; the read costs 0.003 SOL.
 4. **The economy:** buyer + two competing sellers + a verifier that **earns a fee** — a graph that pays
    in two places, not a pair.
 5. **Proof:** the Explorer link, live, with the reference key — and the dispute run, where the lying

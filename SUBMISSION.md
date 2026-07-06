@@ -37,7 +37,7 @@ never no-shows for want of a provider. Code: [`coral-agents/seller-agent/src/ora
 
 ## Why they pay, and the price
 
-A wrong guess about a counterparty costs the whole transaction; a verified read costs **0.0006 SOL**.
+A wrong guess about a counterparty costs the whole transaction; a verified read costs **0.003 SOL**.
 The buyer is an LLM picking **best value, not cheapest** inside a code-enforced budget — it pays the
 premium analyst over the discount scout because a *verified* read is worth more than a raw lookup.
 

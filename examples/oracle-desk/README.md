@@ -21,7 +21,7 @@ active counterparty, or an empty throwaway that will take the money and no-show?
 WANT → BID → AWARD → ESCROW_REQUIRED → DELIVERED → VERIFIED → RELEASED
 ```
 
-1. **WANT** — the buyer broadcasts a job: score wallet `X`, budget `0.001 SOL`.
+1. **WANT** — the buyer broadcasts a job: score wallet `X`, budget `0.005 SOL`.
 2. **BID** — two seller personas compete: `seller-oracle` (premium analyst) and `seller-scout` (discount scout).
 3. **AWARD** — the buyer awards **best value**, not just cheapest (a verified read is worth the premium).
 4. **ESCROW_REQUIRED** — the winner binds a single-use **reference key** to this exact order.
@@ -75,9 +75,14 @@ settlement leg (built with `@pay/payment-runtime`'s `toProofReceipt`).
 |---|---|---|
 | `BUYER_KEYPAIR_B58` | ephemeral + airdrop | Funded buyer key that signs the settlement |
 | `SOLANA_RPC_URL` | devnet | RPC endpoint (mainnet is rejected by the guard) |
-| `BUYER_MAX_SOL` | `0.001` | Code-enforced budget cap |
+| `BUYER_MAX_SOL` | `0.005` | Code-enforced budget cap |
 | `ORACLE_TARGET` | a sample wallet | Counterparty to score if no CLI arg is given |
-| `ORACLE_FLOOR` / `SCOUT_FLOOR` | `0.0006` / `0.0002` | Per-persona cost floors |
-| `VERIFIER_FEE_SOL` | `0.0001` | The verifier's fee, released on a pass |
+| `ORACLE_FLOOR` / `SCOUT_FLOOR` | `0.003` / `0.002` | Per-persona cost floors |
+| `VERIFIER_FEE_SOL` | `0.0015` | The verifier's fee, released on a pass |
 | `VERIFIER_WALLET` | ephemeral | Verifier payout address |
+| `ORACLE_SELLER_WALLET` | ephemeral | Seller payout address (defaults to a fresh generated wallet so settlement is a genuine, verifiable transfer) |
 | `DEMO_NOSHOW` | unset | `1` = dispute mode (same as `--noshow`) |
+
+All of the SOL amounts above default comfortably above Solana's ~0.00089 SOL rent-exemption minimum —
+every payout in this demo lands on a freshly generated address, and a transfer that would leave a
+brand-new account below that threshold is rejected outright (`insufficient funds for rent`).

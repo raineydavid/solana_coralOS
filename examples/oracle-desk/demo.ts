@@ -142,8 +142,11 @@ async function main() {
   // --noshow: the dispute path — the winning seller inflates its score; the verifier catches it.
   const noshow = flags.includes('--noshow') || env.DEMO_NOSHOW === '1'
   const target = flags.find((a) => !a.startsWith('--')) || env.ORACLE_TARGET || '9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM'
-  const budgetSol = Number(env.BUYER_MAX_SOL ?? '0.001')
-  const verifierFeeSol = Number(env.VERIFIER_FEE_SOL ?? '0.0001') // verification is a paid service too
+  // Defaults sit comfortably above Solana's ~0.00089 SOL rent-exemption minimum: every payout here
+  // lands on a freshly generated address, and a transfer that leaves a brand-new account below the
+  // rent-exempt threshold is rejected by the runtime outright ("insufficient funds for rent").
+  const budgetSol = Number(env.BUYER_MAX_SOL ?? '0.005')
+  const verifierFeeSol = Number(env.VERIFIER_FEE_SOL ?? '0.0015') // verification is a paid service too
   const conn = solanaConnection(env.SOLANA_RPC_URL)
 
   console.log(`${c.b}${c.cy}\n  oracle-desk — agents buying a counterparty trust score, settled on devnet${c.x}`)
@@ -161,6 +164,10 @@ async function main() {
     try { buyer = keypairFromB58(env.BUYER_KEYPAIR_B58) } catch { buyer = null }
   }
   if (!buyer) { buyer = Keypair.generate(); ephemeral = true }
+  // A payout wallet distinct from the buyer, so the settlement is a genuine transfer whose balance
+  // change verifyPayment can actually observe (a buyer->itself transfer nets to zero and always
+  // reads back as unverified). Override with ORACLE_SELLER_WALLET to send value somewhere durable.
+  const sellerWallet = env.ORACLE_SELLER_WALLET || Keypair.generate().publicKey.toBase58()
 
   // ── 1. WANT ─────────────────────────────────────────────────────────────────────────────────────
   stage(1, 'buyer broadcasts a WANT')
@@ -173,8 +180,8 @@ async function main() {
   // ── 2. BID ──────────────────────────────────────────────────────────────────────────────────────
   stage(2, 'oracle sellers compete')
   const sellers: Seller[] = [
-    { name: 'seller-oracle', floorSol: Number(env.ORACLE_FLOOR ?? '0.0006') }, // premium analyst
-    { name: 'seller-scout', floorSol: Number(env.SCOUT_FLOOR ?? '0.0002') },   // discount scout
+    { name: 'seller-oracle', floorSol: Number(env.ORACLE_FLOOR ?? '0.003') }, // premium analyst
+    { name: 'seller-scout', floorSol: Number(env.SCOUT_FLOOR ?? '0.002') },   // discount scout
   ]
   const bids = sellers
     .filter((s) => s.floorSol <= parsedWant.budgetSol) // a seller whose floor > budget sits it out
@@ -196,9 +203,7 @@ async function main() {
   // ── 4. ESCROW_REQUIRED — the winner binds a settlement reference to THIS order ────────────────────
   stage(4, 'winner opens settlement (reference-bound)')
   const reference = Keypair.generate().publicKey // single-use key binding the payment to this order
-  const terms = { round, reference: reference.toBase58(), seller: buyer.publicKey.toBase58(), amountSol: winner.priceSol, deadlineSecs: 600, settlement: 'direct' as const }
-  // NOTE: for a self-contained demo the seller receives to the buyer's own key (funds round-trip on
-  // devnet). Swap `seller` for a real payout wallet to send value to a distinct account.
+  const terms = { round, reference: reference.toBase58(), seller: sellerWallet, amountSol: winner.priceSol, deadlineSecs: 600, settlement: 'direct' as const }
   say(winner.s.name, `ESCROW_REQUIRED ref=${reference.toBase58().slice(0, 8)}… amount=${sol(winner.priceSol)} deadline=600s`)
   wire(formatEscrowRequired(terms))
   parseEscrowRequired(formatEscrowRequired(terms))
