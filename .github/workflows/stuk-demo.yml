@@ -5,6 +5,11 @@
 # (Settings → Secrets and variables → Actions); without it the demo tries a devnet airdrop for an
 # ephemeral key and otherwise completes the loop with a clearly-labelled simulated settlement.
 #
+# ORACLE_SELLER_WALLET / VERIFIER_WALLET below are fixed devnet payout ADDRESSES (public keys only,
+# no signing key involved — safe as plain env, not secrets). Pinning them means every CI run pays the
+# same two wallets instead of a fresh throwaway address each time: nothing gets stranded at a dead-end
+# account, and the addresses accumulate a real settlement history a judge can watch grow on Explorer.
+#
 # Every run publishes:
 #   - a job summary with the market transcript highlights + Explorer links (the judges' proof)
 #   - an artifact bundle: full transcripts of both modes + the formal proof receipts (receipt.json)
@@ -52,6 +57,9 @@ jobs:
     env:
       # Funded devnet key (optional) — enables real reference-bound settlement + Explorer links.
       BUYER_KEYPAIR_B58: ${{ secrets.BUYER_KEYPAIR_B58 }}
+      # Fixed devnet payout addresses (public keys, not secrets) — see the note above.
+      ORACLE_SELLER_WALLET: "6egDyZECbWQgWChYWD87UVAthqjQuPR9F9i7cLKKcneA"
+      VERIFIER_WALLET: "HKKmyn2s1zdXGZ3Bi8LdhfP2xEYWUGvseL4dCpqi65Sf"
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
