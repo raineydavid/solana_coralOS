@@ -116,6 +116,10 @@ cd examples/oracle-desk        && npm install && npm run typecheck && npm run de
 ## Deliverables
 
 - **Working demo:** `examples/oracle-desk` (standalone) and `MARKET=oracle` (full escrow) — both above.
+- **CI proof:** the [`STUK devnet demo`](.github/workflows/stuk-demo.yml) workflow runs both demo modes
+  live on devnet from a GitHub runner — the job summary carries the transcript highlights and Explorer
+  links, and the `stuk-demo-proof` artifact carries full transcripts + formal proof receipts. Add a
+  funded devnet key as the `BUYER_KEYPAIR_B58` repo secret for guaranteed live settlement links.
 - **Pitch deck (5 slides):** `docs/stuk-pitch-deck.html` — open in a browser, press → to advance.
 - **Demo video script (3 min):** `docs/stuk-demo-video-script.md`.
 - **Repo:** public, no keys committed (`.env` is git-ignored; see `.env.example`).

@@ -1,0 +1,120 @@
+# STUK submission proof — runs the oracle-desk demo end-to-end on devnet from a CI runner.
+#
+# The runner has open internet, so the oracle reads the counterparty wallet LIVE off devnet.
+# Settlement is live too when the repo secret BUYER_KEYPAIR_B58 holds a funded devnet key
+# (Settings → Secrets and variables → Actions); without it the demo tries a devnet airdrop for an
+# ephemeral key and otherwise completes the loop with a clearly-labelled simulated settlement.
+#
+# Every run publishes:
+#   - a job summary with the market transcript highlights + Explorer links (the judges' proof)
+#   - an artifact bundle: full transcripts of both modes + the formal proof receipts (receipt.json)
+name: STUK devnet demo
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Devnet wallet to score (blank = demo default)"
+        required: false
+        default: ""
+  push:
+    branches: [main, "claude/stuk-solana-coralos-8jsl1o"]
+    paths:
+      - "examples/oracle-desk/**"
+      - "coral-agents/seller-agent/**"
+      - "coral-agents/verifier-agent/**"
+      - ".github/workflows/stuk-demo.yml"
+
+jobs:
+  proof-gate:
+    name: STUK proof gate (oracle + verifier tests)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 20
+      - name: Build the runtimes — the agents' file deps need their dist
+        run: |
+          (cd packages/agent-runtime && npm install && npm run build)
+          (cd packages/harness-runtime && npm install && npm run build)
+          (cd packages/payment-runtime && npm install && npm run build)
+      - name: Seller agent — oracle service tests
+        run: cd coral-agents/seller-agent && npm install && npm run typecheck && npm test
+      - name: Verifier agent — score re-derivation tests
+        run: cd coral-agents/verifier-agent && npm install && npm test
+
+  devnet-demo:
+    name: Live demo (happy path + dispute path)
+    runs-on: ubuntu-latest
+    needs: proof-gate
+    timeout-minutes: 15
+    env:
+      # Funded devnet key (optional) — enables real reference-bound settlement + Explorer links.
+      BUYER_KEYPAIR_B58: ${{ secrets.BUYER_KEYPAIR_B58 }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 20
+
+      - name: Build the runtimes the demo imports
+        run: |
+          (cd packages/agent-runtime && npm install && npm run build)
+          (cd packages/payment-runtime && npm install && npm run build)
+          (cd packages/solana-agent-tools && npm install && npm run build)
+
+      - name: Install oracle-desk
+        run: cd examples/oracle-desk && npm install
+
+      - name: "Run the happy path — WANT→…→VERIFIED→RELEASED"
+        env:
+          TARGET: ${{ inputs.target }}
+        run: |
+          mkdir -p proof
+          cd examples/oracle-desk
+          npm run --silent demo -- ${TARGET:+"$TARGET"} 2>&1 | tee ../../proof/happy.ansi
+          sed 's/\x1b\[[0-9;]*m//g' ../../proof/happy.ansi > ../../proof/happy.txt
+          cp receipt.json ../../proof/receipt-happy.json
+
+      - name: "Run the dispute path — the seller lies, the buyer keeps its funds"
+        run: |
+          cd examples/oracle-desk
+          npm run --silent demo:noshow 2>&1 | tee ../../proof/noshow.ansi
+          sed 's/\x1b\[[0-9;]*m//g' ../../proof/noshow.ansi > ../../proof/noshow.txt
+          cp receipt.json ../../proof/receipt-noshow.json
+
+      - name: Publish the proof to the job summary
+        run: |
+          {
+            echo "## STUK devnet demo — proof of settlement"
+            echo
+            echo "### Happy path"
+            echo '```'
+            grep -E "DELIVERED|VERIFIED|RELEASED|SIMULATED|Loop complete|earned on one order" proof/happy.txt || true
+            echo '```'
+            LINKS=$(grep -oE 'https://explorer\.solana\.com[^[:space:]]*' proof/happy.txt | sort -u || true)
+            if [ -n "$LINKS" ]; then
+              echo "**Explorer links (live settlement):**"
+              echo "$LINKS" | while read -r l; do echo "- $l"; done
+            else
+              echo "_Settlement simulated — add a funded devnet key as the \`BUYER_KEYPAIR_B58\` repo secret for live Explorer links._"
+            fi
+            echo
+            echo "### Dispute path (\`--noshow\`)"
+            echo '```'
+            grep -E "cutting corners|claim ≠ evidence|VERIFIED|REFUSED|worked for free|Dispute path" proof/noshow.txt || true
+            echo '```'
+            echo
+            echo "Full transcripts and formal proof receipts are attached as the \`stuk-demo-proof\` artifact."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Attach transcripts + proof receipts
+        uses: actions/upload-artifact@v4
+        with:
+          name: stuk-demo-proof
+          path: |
+            proof/happy.txt
+            proof/noshow.txt
+            proof/receipt-happy.json
+            proof/receipt-noshow.json
