@@ -71,11 +71,9 @@ settlement leg (built with `@pay/payment-runtime`'s `toProofReceipt`).
 
 Without `ORACLE_SELLER_WALLET` / `VERIFIER_WALLET` set, each run pays out to a **freshly generated**
 address — proves settlement fine, but that address is then a dead end (its secret key was never saved,
-so the devnet SOL just sits there unrecoverable). Set both to addresses you control — or reuse the
-repo's CI addresses, which accumulate real settlement history across every automated run:
-`ORACLE_SELLER_WALLET=6egDyZECbWQgWChYWD87UVAthqjQuPR9F9i7cLKKcneA` ·
-`VERIFIER_WALLET=HKKmyn2s1zdXGZ3Bi8LdhfP2xEYWUGvseL4dCpqi65Sf` — watch them on
-[Solana Explorer (devnet)](https://explorer.solana.com/address/6egDyZECbWQgWChYWD87UVAthqjQuPR9F9i7cLKKcneA?cluster=devnet).
+so the devnet SOL just sits there unrecoverable). Set both in your own local `.env` (never commit a
+wallet address to the repo) to point payouts at a durable address you control, so you can watch a
+single wallet accumulate settlement history across runs on Solana Explorer.
 
 ## Config (all optional)
 
