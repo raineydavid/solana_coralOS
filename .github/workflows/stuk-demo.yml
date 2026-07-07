@@ -27,6 +27,7 @@ on:
       - "examples/oracle-desk/**"
       - "coral-agents/seller-agent/**"
       - "coral-agents/verifier-agent/**"
+      - "examples/oracle-desk/web/**"
       - ".github/workflows/stuk-demo.yml"
 
 jobs:
@@ -122,3 +123,46 @@ jobs:
             proof/noshow.txt
             proof/receipt-happy.json
             proof/receipt-noshow.json
+
+  web-e2e:
+    name: Web app e2e (connect a wallet, read its live trust score)
+    runs-on: ubuntu-latest
+    needs: proof-gate
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 20
+
+      - name: Install oracle-desk/web
+        run: cd examples/oracle-desk/web && npm install
+
+      - name: Install a matching Playwright browser
+        run: cd examples/oracle-desk/web && npx playwright install --with-deps chromium
+
+      # This runner has open internet, so the mock-wallet-driven test reads devnet for real — the
+      # screenshots/video below show an actual live trust score, not the sandboxed dev fallback.
+      - name: "Run the e2e proof — connect wallet, read live trust score"
+        run: cd examples/oracle-desk/web && npm run e2e
+
+      - name: Publish the proof to the job summary
+        if: always()
+        run: |
+          {
+            echo "## oracle-desk/web — connect-a-wallet proof"
+            echo
+            echo "A real browser, driven by Playwright with a spec-compliant mock Wallet Standard"
+            echo "wallet (fresh throwaway keypair, generated at test time, never committed), connects"
+            echo "and reads a live devnet trust score. Screenshots and a screen-recorded video of the"
+            echo "run are attached as the \`oracle-desk-web-e2e\` artifact."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Attach screenshots + video
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: oracle-desk-web-e2e
+          path: |
+            examples/oracle-desk/web/test-results/**
+          if-no-files-found: warn
