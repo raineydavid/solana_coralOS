@@ -262,10 +262,15 @@ async function main() {
   const verifierRef = Keypair.generate().publicKey.toBase58() // its own single-use reference
   const totalOut = winner.priceSol + verifierFeeSol
 
+  // Bound atomically into the settlement transaction (one signature covers both) — so "what was
+  // verified" is an on-chain fact anyone can read back later, not just this run's console output.
+  // See audit.ts: reconstructs a wallet's history from these memos alone, no receipt.json needed.
+  const auditMemo = `svc=oracle round=${round} verdict=pass score=${report.trustScore} sha=${sha}`
+
   const funded = await ensureFunds(conn, buyer, totalOut, ephemeral)
   if (!funded.ok) {
     console.log(`   ${c.y}SIMULATED settlement${c.x} (buyer wallet unfunded${ephemeral ? ' and devnet airdrop unavailable' : ''}).`)
-    console.log(`   ${c.dim}Would transfer ${sol(winner.priceSol)} to seller ${terms.seller.slice(0, 8)}… ref=${terms.reference.slice(0, 8)}…${c.x}`)
+    console.log(`   ${c.dim}Would transfer ${sol(winner.priceSol)} to seller ${terms.seller.slice(0, 8)}… ref=${terms.reference.slice(0, 8)}… memo="${auditMemo}"${c.x}`)
     console.log(`   ${c.dim}Would transfer ${sol(verifierFeeSol)} to verifier ${verifierWallet.slice(0, 8)}… ref=${verifierRef.slice(0, 8)}… (verification is paid work)${c.x}`)
     console.log(`   ${c.dim}Fund BUYER_KEYPAIR_B58 in .env (a few devnet SOL) and re-run for live Explorer links.${c.x}`)
     writeReceipt(receiptPath, { round, sha, verdict: 'pass', legs: [
@@ -278,11 +283,11 @@ async function main() {
   }
 
   say('buyer', `verification passed — releasing ${sol(winner.priceSol)} to the seller and ${sol(verifierFeeSol)} to the verifier now.`)
-  const sig = await signTransfer(buyer, terms.seller, winner.priceSol, { reference: terms.reference, maxSol: budgetSol })
+  const sig = await signTransfer(buyer, terms.seller, winner.priceSol, { reference: terms.reference, maxSol: budgetSol, memo: auditMemo })
   // The seller proves the payment is bound to THIS order by finding the reference on-chain.
   const ok = await verifyPayment(sig, { recipient: terms.seller, amountSol: winner.priceSol, reference: terms.reference })
-  console.log(`   ${c.g}${c.b}RELEASED${c.x} ${sol(winner.priceSol)} → seller · reference-verified=${ok}`)
-  const vsig = await signTransfer(buyer, verifierWallet, verifierFeeSol, { reference: verifierRef, maxSol: budgetSol })
+  console.log(`   ${c.g}${c.b}RELEASED${c.x} ${sol(winner.priceSol)} → seller · reference-verified=${ok} · memo attached`)
+  const vsig = await signTransfer(buyer, verifierWallet, verifierFeeSol, { reference: verifierRef, maxSol: budgetSol, memo: auditMemo })
   console.log(`   ${c.g}${c.b}RELEASED${c.x} ${sol(verifierFeeSol)} → verifier (the graph pays for honesty, too)`)
   writeReceipt(receiptPath, { round, sha, verdict: 'pass', legs: [
     toProofReceipt({ paid: true, rail: 'solana-pay', proof: terms.reference, txSignature: sig, amount: String(winner.priceSol), currency: 'SOL', recipient: terms.seller, reference: terms.reference }, { provider: winner.s.name, service: 'oracle-risk' }),
@@ -292,8 +297,10 @@ async function main() {
   console.log(`     seller tx    ${c.cy}${explorer('tx', sig)}${c.x}`)
   console.log(`     verifier tx  ${c.cy}${explorer('tx', vsig)}${c.x}`)
   console.log(`     reference    ${c.cy}${explorer('address', terms.reference)}${c.x}`)
+  console.log(`     on-chain memo ${c.dim}"${auditMemo}"${c.x}`)
   console.log(`     receipt      ${c.dim}${receiptPath}${c.x}`)
   console.log(`\n${c.b}${c.g}✔ Two agents earned on one order — the oracle for the read, the verifier for checking it. No human in the loop.${c.x}`)
+  console.log(`${c.dim}   Reconstruct this from the chain alone: npm run audit -- ${terms.seller}${c.x}`)
 }
 
 /** Durable run artifact: the delivery hash, the verdict, and a formal proof receipt per settlement leg. */

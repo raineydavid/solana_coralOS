@@ -48,6 +48,8 @@ jobs:
         run: cd coral-agents/seller-agent && npm install && npm run typecheck && npm test
       - name: Verifier agent — score re-derivation tests
         run: cd coral-agents/verifier-agent && npm install && npm test
+      - name: Oracle-desk — audit tool tests
+        run: cd examples/oracle-desk && npm install && npm run typecheck && npm test
 
   devnet-demo:
     name: Live demo (happy path + dispute path)
@@ -82,6 +84,16 @@ jobs:
           sed 's/\x1b\[[0-9;]*m//g' ../../proof/happy.ansi > ../../proof/happy.txt
           cp receipt.json ../../proof/receipt-happy.json
 
+      - name: "Reconstruct the audit trail from the chain alone (proves the memo round-trips)"
+        run: |
+          SELLER=$(grep -oP 'ESCROW_REQUIRED.*seller=\K\S+' proof/happy.txt | head -1 || true)
+          if [ -z "$SELLER" ]; then
+            echo "no seller address found in the happy-path transcript — skipping" | tee proof/audit.txt
+          else
+            cd examples/oracle-desk
+            npm run --silent audit -- "$SELLER" --limit 5 2>&1 | tee ../../proof/audit.txt
+          fi
+
       - name: "Run the dispute path — the seller lies, the buyer keeps its funds"
         run: |
           cd examples/oracle-desk
@@ -111,6 +123,11 @@ jobs:
             grep -E "cutting corners|claim ≠ evidence|VERIFIED|REFUSED|worked for free|Dispute path" proof/noshow.txt || true
             echo '```'
             echo
+            echo "### Audit trail — reconstructed from the chain alone"
+            echo '```'
+            cat proof/audit.txt || true
+            echo '```'
+            echo
             echo "Full transcripts and formal proof receipts are attached as the \`stuk-demo-proof\` artifact."
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -121,6 +138,7 @@ jobs:
           path: |
             proof/happy.txt
             proof/noshow.txt
+            proof/audit.txt
             proof/receipt-happy.json
             proof/receipt-noshow.json
 

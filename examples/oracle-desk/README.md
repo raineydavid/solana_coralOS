@@ -61,6 +61,29 @@ The judging question — *does settlement hold up under dispute / no-show?* Run 
 Every run writes `receipt.json` — the delivery's sha256, the verdict, and a formal proof receipt per
 settlement leg (built with `@pay/payment-runtime`'s `toProofReceipt`).
 
+## The audit trail (`npm run audit`)
+
+`receipt.json` is convenient, but it's a local file — it disappears the moment you delete it, and
+nothing stops it from being edited. The settlement transactions don't have that problem. Every
+`RELEASED` payment carries an **on-chain memo** — service, round, verdict, score, and the full sha256
+of the delivered artifact — bound into the *same signed transaction* as the payment itself
+(`signTransfer`'s `memo` option in `packages/agent-runtime/src/solana/pay.ts`). One signature covers
+both, so the audit note can't be swapped out after the fact.
+
+That makes a wallet's own transaction history durable, tamper-evident evidence of every verification
+decision it was paid for — reconstructible from the chain alone, no receipt file, no off-chain
+database, no trust in this repo's bookkeeping required:
+
+```sh
+npm run audit -- <any-devnet-wallet-address>
+```
+
+Point it at the seller or verifier wallet from a run above (printed at the end of `npm run demo`) to
+see it work. Point it at *any* devnet wallet — this isn't specific to a wallet we control; if a
+transaction paid into it carries one of these memos, `audit.ts` decodes it straight from
+`getParsedTransaction`, with a pure, unit-tested memo decoder (`audit.test.ts`) so the logic is
+verifiable independent of any live RPC call.
+
 ## Settlement: what's real
 
 - The **market wire format** (`WANT`/`BID`/`AWARD`/…), the **Solana settlement primitives**

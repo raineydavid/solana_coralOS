@@ -55,6 +55,13 @@ on-chain signals*, so the verifier **re-derives it from the delivery's own evide
 deterministically — keyless, no LLM, immune to prompt injection — even if an LLM judge would have been
 fooled. The model proposes; code enforces.
 
+**A tamper-evident audit trail, not just a payment.** Every settlement binds an on-chain memo —
+service, round, verdict, score, and the full sha256 of the delivered artifact — into the *same signed
+transaction* as the payment (`signTransfer`'s `memo` option). One signature covers both, so the audit
+note can't be edited after the fact. `examples/oracle-desk/audit.ts` reconstructs the full decision
+history of any wallet straight from the chain — no receipt file, no off-chain database, no trust in
+this repo's bookkeeping required: `npm run audit -- <any-devnet-wallet>`.
+
 ## Proof — settlement, live
 
 ```

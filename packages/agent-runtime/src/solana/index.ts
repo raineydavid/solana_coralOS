@@ -2,5 +2,5 @@
 
 export { assertDevnet, solanaConnection, DEVNET_RPC } from './connection.js'
 
-export { generatePaymentUrl, verifyPayment, signTransfer, loadKeypairB58 } from './pay.js'
+export { generatePaymentUrl, verifyPayment, signTransfer, loadKeypairB58, memoInstruction, MEMO_PROGRAM_ID } from './pay.js'
 export type { PaymentUrl } from './pay.js'

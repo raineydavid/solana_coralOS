@@ -10,12 +10,27 @@ import {
   PublicKey,
   SystemProgram,
   Transaction,
+  TransactionInstruction,
   LAMPORTS_PER_SOL,
   sendAndConfirmTransaction,
 } from '@solana/web3.js'
 import { encodeURL, validateTransfer } from '@solana/pay'
 import BigNumber from 'bignumber.js'
 import { solanaConnection } from './connection.js'
+
+/** SPL Memo program — same id on every cluster. Attaching one turns a plain transfer into a durable,
+ * tamper-evident audit record: the memo is signed and immutable the instant the transaction lands,
+ * so "what was verified" travels atomically with "what was paid" instead of living only off-chain. */
+export const MEMO_PROGRAM_ID = new PublicKey('MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr')
+
+/** Build a Memo-program instruction carrying `memo` as UTF-8 log data. Pure — no network, easy to unit test. */
+export function memoInstruction(memo: string): TransactionInstruction {
+  return new TransactionInstruction({
+    programId: MEMO_PROGRAM_ID,
+    keys: [],
+    data: Buffer.from(memo, 'utf8'),
+  })
+}
 
 /** Return from {@link generatePaymentUrl}. */
 export interface PaymentUrl {
@@ -96,14 +111,16 @@ export async function verifyPayment(
 
 /**
  * Sign and send a SOL transfer to `recipient`, optionally tagging it with a Solana Pay `reference`
- * (read-only, non-signer account) so the seller can verify it on-chain. Budget-checked against
- * `maxSol`. Returns the confirmed signature.
+ * (read-only, non-signer account) so the seller can verify it on-chain, and optionally an on-chain
+ * `memo` (e.g. a content hash + verdict) bound into the SAME signed transaction as the payment — one
+ * signature covers both, so the audit note can't be swapped out after the fact. Budget-checked
+ * against `maxSol`. Returns the confirmed signature.
  */
 export async function signTransfer(
   keypair: Keypair,
   recipient: string,
   amountSol: number,
-  opts: { reference?: string; maxSol?: number } = {},
+  opts: { reference?: string; maxSol?: number; memo?: string } = {},
 ): Promise<string> {
   if (amountSol <= 0) throw new Error('Invalid amount')
   if (opts.maxSol != null && amountSol > opts.maxSol) {
@@ -118,5 +135,6 @@ export async function signTransfer(
     ix.keys.push({ pubkey: new PublicKey(opts.reference), isSigner: false, isWritable: false })
   }
   const tx = new Transaction().add(ix)
+  if (opts.memo) tx.add(memoInstruction(opts.memo))
   return sendAndConfirmTransaction(solanaConnection(), tx, [keypair], { commitment: 'confirmed' })
 }

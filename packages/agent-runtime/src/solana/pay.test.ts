@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { Keypair } from '@solana/web3.js'
 import bs58 from 'bs58'
-import { generatePaymentUrl, loadKeypairB58 } from './pay.js'
+import { generatePaymentUrl, loadKeypairB58, memoInstruction, MEMO_PROGRAM_ID } from './pay.js'
 
 describe('generatePaymentUrl', () => {
   const recipient = Keypair.generate().publicKey.toBase58()
@@ -32,5 +32,19 @@ describe('loadKeypairB58', () => {
   it('throws when the env var is unset', () => {
     delete process.env.MISSING_KP
     expect(() => loadKeypairB58('MISSING_KP')).toThrow(/not set/)
+  })
+})
+
+describe('memoInstruction', () => {
+  it('targets the SPL Memo program with no accounts', () => {
+    const ix = memoInstruction('svc=oracle-risk round=1 verdict=pass')
+    expect(ix.programId.equals(MEMO_PROGRAM_ID)).toBe(true)
+    expect(ix.keys).toHaveLength(0)
+  })
+
+  it('carries the memo text as UTF-8 instruction data, byte for byte', () => {
+    const memo = 'svc=oracle-verify round=7 verdict=fail sha=abc123'
+    const ix = memoInstruction(memo)
+    expect(ix.data.toString('utf8')).toBe(memo)
   })
 })
