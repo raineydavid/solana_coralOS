@@ -12,6 +12,18 @@ npm run demo:noshow                           # the dispute path: the seller lie
 
 `<a-devnet-wallet-to-score>` is the counterparty the buyer wants a read on. Omit it to use the default.
 
+## Also in this folder
+
+| Path | What it is |
+|---|---|
+| `web/` | Connect a Solana wallet (Phantom/Solflare, or any Wallet Standard wallet) in the browser and get its live trust score client-side — `cd web && npm install && npm run dev`. |
+| `video/` | Renders the demo's real event log into a proof clip with [Remotion](https://remotion.dev) — no screen recording — `cd video && npm install && npm run render`. |
+
+Both run automatically on every push in [`.github/workflows/stuk-demo.yml`](../../.github/workflows/stuk-demo.yml):
+the CLI demo (happy path + dispute path, real devnet, real settlement), and a `web-e2e` job that drives
+the actual connect-wallet page with Playwright and a spec-compliant mock wallet, uploading screenshots
++ a screen-recorded video of the real app in use as a workflow artifact.
+
 ## What you're watching
 
 A buyer agent is about to transact with an unknown wallet and wants to know: *is this a real, funded,

@@ -118,10 +118,13 @@ cd examples/oracle-desk        && npm install && npm run typecheck && npm run de
 ## Deliverables
 
 - **Working demo:** `examples/oracle-desk` (standalone) and `MARKET=oracle` (full escrow) — both above.
-- **CI proof:** the [`STUK devnet demo`](.github/workflows/stuk-demo.yml) workflow runs both demo modes
-  live on devnet from a GitHub runner — the job summary carries the transcript highlights and Explorer
-  links, and the `stuk-demo-proof` artifact carries full transcripts + formal proof receipts. Add a
-  funded devnet key as the `BUYER_KEYPAIR_B58` repo secret for guaranteed live settlement links.
+- **CI proof:** the [`STUK devnet demo`](.github/workflows/stuk-demo.yml) workflow runs on every push.
+  `devnet-demo` runs both CLI demo modes live on devnet — the job summary carries the transcript
+  highlights and Explorer links, and the `stuk-demo-proof` artifact carries full transcripts + formal
+  proof receipts. `web-e2e` drives the real connect-wallet page with Playwright (a spec-compliant mock
+  wallet, real devnet reads) and uploads named screenshots + a screen-recorded video of the actual app
+  in use as the `oracle-desk-web-e2e` artifact. Add a funded devnet key as the `BUYER_KEYPAIR_B58` repo
+  secret for guaranteed live settlement links.
 - **Try it live:** `examples/oracle-desk/web` — connect a wallet, get its trust score in the browser.
 - **Pitch deck (5 slides):** `docs/stuk-pitch-deck.html` — open in a browser, press → to advance.
 - **Proof clips, rendered not screen-recorded:** `examples/oracle-desk/video` — `npm run render`
