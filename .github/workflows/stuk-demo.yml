@@ -44,6 +44,7 @@ jobs:
           (cd packages/agent-runtime && npm install && npm run build)
           (cd packages/harness-runtime && npm install && npm run build)
           (cd packages/payment-runtime && npm install && npm run build)
+          (cd packages/solana-agent-tools && npm install && npm run build)
       - name: Seller agent — oracle service tests
         run: cd coral-agents/seller-agent && npm install && npm run typecheck && npm test
       - name: Verifier agent — score re-derivation tests
