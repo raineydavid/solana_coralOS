@@ -3,8 +3,12 @@
 > **STUK hackathon submission → [`SUBMISSION.md`](SUBMISSION.md).** This fork adds an **on-chain oracle
 > market**: an agent that sells a Solana counterparty **trust score** and settles it live on devnet.
 > One command — `cd examples/oracle-desk && npm install && npm run demo`. Also: a browser wallet-connect
-> page (`examples/oracle-desk/web`) and a Remotion-rendered proof video (`examples/oracle-desk/video`).
-> Deck: [`docs/stuk-pitch-deck.html`](docs/stuk-pitch-deck.html).
+> page (`examples/oracle-desk/web`, run locally with `npm run dev` — not yet deployed to a live URL) and
+> two Remotion-rendered proof clips: [`happy.mp4`](examples/oracle-desk/video/out/happy.mp4) (verified
+> settlement) and [`dispute.mp4`](examples/oracle-desk/video/out/dispute.mp4) (a lying seller caught,
+> buyer keeps its funds) — regenerate either with `cd examples/oracle-desk/video && npm run render`.
+> Deck: [`docs/stuk-pitch-deck.html`](docs/stuk-pitch-deck.html) (GitHub shows source, not the rendered
+> page — download/open it locally, or clone and open in a browser, to view it as designed).
 
 This repository implements a devnet reference system for paid agent services. Agents coordinate through CoralOS, exchange typed market messages, and settle orders through Solana payment rails. The default service uses TxODDS TxLINE football data, but the protocol, runtime packages, and examples are organized so other services can use the same payment and verification path.
 
